@@ -1,0 +1,10 @@
+package com.github.emmmm9o.javatypes;
+
+import java.util.*;
+
+import com.github.emmmm9o.javatypes.JavaTypes.*;
+
+
+public interface Generator {
+  public String generate(Map<Class<?>, JavaType> maps);
+}
