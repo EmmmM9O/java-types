@@ -6,5 +6,5 @@ import com.github.emmmm9o.javatypes.JavaTypes.*;
 
 
 public interface Generator {
-  public String generate(Map<Class<?>, JavaType> maps);
+  public String generate(Map<String,JavaType> maps);
 }
