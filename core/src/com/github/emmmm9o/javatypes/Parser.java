@@ -12,12 +12,16 @@ public class Parser {
     public boolean filter(Class<?> clazz);
   }
 
-  public Filter filter = clazz -> clazz.getName().contains("java.lang");
+  public Filter filter = clazz -> false;
   public Map<String, JavaType> classMap = new HashMap<>();
+  public Map<String, Boolean> supMap = new HashMap<>();
+  public List<JavaType> values = new ArrayList<>();
   public Map<Type, JavaTypeUse> typeMap = new HashMap<>();
 
   public void put(Class<?> clazz) {
-    classMap.put(clazz.getName(), new JavaType(clazz));
+    var tmp = new JavaType(clazz);
+    classMap.put(clazz.getName(), tmp);
+    values.add(tmp);
   }
 
   public void initEnv() {
@@ -68,6 +72,10 @@ public class Parser {
   }
 
   public JavaTypeUse getType(Type utype) {
+    return getType(utype, false);
+  }
+
+  public JavaTypeUse getType(Type utype, boolean sup) {
     var tmp = typeMap.getOrDefault(utype, null);
     if (tmp != null)
       return tmp;
@@ -75,10 +83,10 @@ public class Parser {
       tmp = (new JavaTypeUse() {
         {
           if (tClass.isArray()) {
-            typeC = getType(tClass.getComponentType());
+            typeC = getType(tClass.getComponentType(), sup);
             type = null;
           } else {
-            type = parse(tClass);
+            type = parse(tClass, sup);
             typeC = null;
           }
           typeG = null;
@@ -90,7 +98,7 @@ public class Parser {
     if (utype instanceof ParameterizedType ptype) {
       tmp = (new JavaTypeUse() {
         {
-          type = parse((Class<?>) ptype.getRawType());
+          type = parse((Class<?>) ptype.getRawType(), sup);
           typeG = null;
           generics = parseGenerics(ptype);
           typeRef = utype;
@@ -112,7 +120,7 @@ public class Parser {
     if (utype instanceof GenericArrayType gat) {
       tmp = new JavaTypeUse() {
         {
-          typeC = getType(gat.getGenericComponentType());
+          typeC = getType(gat.getGenericComponentType(), sup);
           typeG = null;
           type = null;
           generics = new ArrayList<>();
@@ -151,23 +159,33 @@ public class Parser {
   }
 
   public JavaType parse(Class<?> clazz) {
+    return parse(clazz, false);
+  }
+
+  public JavaType parse(Class<?> clazz, boolean sup) {
     var tmp = classMap.getOrDefault(clazz.getName(), null);
-    if (tmp != null)
+    var su = supMap.getOrDefault(clazz.getName(), false);
+    if (su && sup) {
+      supMap.put(clazz.getName(), false);
+    } else if (tmp != null)
       return tmp;
 
     tmp = new JavaType(clazz);
-    classMap.put(clazz.getName(), tmp);
-    if (filter.filter(clazz))
-      return tmp;
     tmp.generics = getTypes(clazz.getTypeParameters());
+    classMap.put(clazz.getName(), tmp);
+    if (filter.filter(clazz) && !sup) {
+      values.add(tmp);
+      supMap.put(clazz.getName(), true);
+      return tmp;
+    }
 
     var superClass = clazz.getGenericSuperclass();
     if (superClass != null) {
-      tmp.superType = getType(superClass);
+      tmp.superType = getType(superClass, true);
     }
 
     for (var intf : clazz.getGenericInterfaces()) {
-      tmp.interfaces.add(getType(intf));
+      tmp.interfaces.add(getType(intf, true));
     }
     for (var field : clazz.getDeclaredFields()) {
       tmp.fields.add(new JavaField() {
@@ -200,6 +218,7 @@ public class Parser {
         }
       });
     }
+    values.add(tmp);
     return tmp;
   }
 }

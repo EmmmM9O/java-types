@@ -1,4 +1,4 @@
-
+/* (C) 2025 */
 import java.util.*;
 import com.github.emmmm9o.javatypes.JavaTypes.*;
 

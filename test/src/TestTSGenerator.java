@@ -1,8 +1,9 @@
+/* (C) 2025 */
 import com.github.emmmm9o.javatypes.*;
 
 import arc.*;
 
-public class TestTSGenerator{
+public class TestTSGenerator {
   public static void main(String[] args) {
 
     var parser = new Parser();
@@ -11,7 +12,7 @@ public class TestTSGenerator{
     parser.parse(Core.class);
     // System.out.println(TestUtil.toJson(parser.classMap.values()));
     var generator = new TSGenerator();
-    System.out.println(generator.generate(parser.classMap));
+    System.out.println(generator.generate(parser.classMap, parser.values));
   }
 
 }

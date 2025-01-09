@@ -39,6 +39,7 @@ allprojects {
   repositories {
     mavenLocal()
     mavenCentral()
+    maven{ url "https://raw.kkgithub.com/Zelaux/MindustryRepo/master/repository" }
   }
   dependencies{
   }

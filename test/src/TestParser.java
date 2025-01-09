@@ -1,6 +1,4 @@
-
 /* (C) 2025 */
-
 import com.github.emmmm9o.javatypes.*;
 
 import mindustry.*;
@@ -19,7 +17,7 @@ public class TestParser {
   public static void main(String[] args) {
 
     var parser = new Parser();
-    parser.filter=clazz->clazz.getName().contains("java")||clazz.getName().contains("rhino");
+    parser.filter = clazz -> clazz.getName().contains("java") || clazz.getName().contains("rhino");
     parser.initEnv();
     parser.parse(Vars.class);
     parser.parse(Core.class);

@@ -41,7 +41,7 @@ public class JavaTypes {
   public static class JavaTypeUse {
     public JavaType type;
     public String typeG;// if it is generic
-    public JavaTypeUse typeC;//if it is a array
+    public JavaTypeUse typeC;// if it is a array
     public List<JavaTypeUse> generics;
     public List<JavaTypeUse> upper;
     public List<JavaTypeUse> lower;
