@@ -174,7 +174,8 @@ public class Parser {
     tmp.generics = getTypes(clazz.getTypeParameters());
     classMap.put(clazz.getName(), tmp);
     if (filter.filter(clazz) && !sup) {
-      values.add(tmp);
+      if (!tmp.inner)
+        values.add(tmp);
       supMap.put(clazz.getName(), true);
       return tmp;
     }
@@ -183,9 +184,11 @@ public class Parser {
     if (superClass != null) {
       tmp.superType = getType(superClass, true);
     }
-
     for (var intf : clazz.getGenericInterfaces()) {
       tmp.interfaces.add(getType(intf, true));
+    }
+    for (var claz : clazz.getDeclaredClasses()) {
+      tmp.classes.add(parse(claz));
     }
     for (var field : clazz.getDeclaredFields()) {
       tmp.fields.add(new JavaField() {
@@ -199,6 +202,8 @@ public class Parser {
     for (var method : clazz.getDeclaredMethods()) {
       tmp.methods.add(new JavaMethod() {
         {
+          varArgs = method.isVarArgs();
+          modifiers = getModifiers(method.getModifiers());
           result = getType(method.getGenericReturnType());
           name = method.getName();
           paramaters = new ArrayList<>();
@@ -218,7 +223,8 @@ public class Parser {
         }
       });
     }
-    values.add(tmp);
+    if (!tmp.inner)
+      values.add(tmp);
     return tmp;
   }
 }

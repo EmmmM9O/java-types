@@ -20,6 +20,8 @@ public class JavaTypes {
     public Set<JavaTypeUse> interfaces;
     public List<JavaField> fields;
     public List<JavaMethod> methods;
+    public List<JavaType> classes;
+    public boolean inner;
 
     public JavaType() {
 
@@ -34,7 +36,10 @@ public class JavaTypes {
       interfaces = new HashSet<>();
       fields = new ArrayList<>();
       methods = new ArrayList<>();
+      classes = new ArrayList<>();
       superType = null;
+      inner = clazz.getDeclaringClass() != null;
+
     }
   }
 
@@ -59,7 +64,7 @@ public class JavaTypes {
     public String name;
     public Set<JavaModifier> modifiers;
     public List<JavaTypeUse> generics;
-
+    public boolean varArgs;
   }
 
   public static class JavaField {

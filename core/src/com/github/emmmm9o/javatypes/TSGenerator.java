@@ -32,6 +32,7 @@ public class TSGenerator implements Generator {
     }
   }
 
+  public String prefix = "";
   public Map<String, TSModule> refs = new HashMap<>();
   public TSModule root = new TSModule();
 
@@ -40,7 +41,7 @@ public class TSGenerator implements Generator {
     if (t != null)
       return t;
     var now = root;
-    for (var value : module.replace("function","_function").split("\\.")) {
+    for (var value : module.replace("function", "_function").split("\\.")) {
       var tmp = now.modules.getOrDefault(value, null);
       if (tmp != null) {
         now = tmp;
@@ -75,13 +76,26 @@ public class TSGenerator implements Generator {
     trefs.put("int", "number");
     trefs.put("float", "number");
     trefs.put("double", "number");
+    trefs.put("void", "void");
+    trefs.put("boolean", "boolean");
+    trefs.put("char", "string");
+    trefs.put("byte", "string");
+    trefs.put("java.lang.String", "string");
+    trefs.put("java.lang.Double", "number");
+    trefs.put("java.lang.Float", "number");
+    trefs.put("java.lang.Integer", "number");
+    trefs.put("java.lang.Void", "void");
+    trefs.put("java.lang.Boolean", "boolean");
+    trefs.put("java.lang.Object", "any");
+
   }
 
   public String getType(JavaType type) {
     var t = trefs.getOrDefault(type.classpath, null);
     if (t != null)
       return t;
-    return type.classpath.replace("$", ".").replace("function","_function");
+    return (prefix + type.classpath).replace("$", ".").replace("function", "_function")
+        .replace(".type", "._type").replaceAll("\\.\\d+", ".");
   }
 
   public String generateGenerics(List<JavaTypeUse> generics) {
@@ -124,6 +138,15 @@ public class TSGenerator implements Generator {
       str.append(">");
     }
     str.append(generateGenerics(type.generics));
+    if (type.upper != null && !type.upper.isEmpty()) {
+      var tm = new ArrayList<JavaTypeUse>();
+      for (var t : type.upper) {
+        if (t.type != null && t.type.classpath == "java.lang.Object")
+          continue;
+        tm.add(t);
+      }
+      type.upper = tm;
+    }
     if (type.upper != null && !type.upper.isEmpty()
         && (up || (type.typeG == null || type.typeG == null))) {
       str.append(" extends ");
@@ -137,6 +160,8 @@ public class TSGenerator implements Generator {
 
   public String generateMoifier(JavaModifier modifier) {
     if (modifier == JavaModifier.Final)
+      return "";
+    if (modifier == JavaModifier.Abstract)
       return "";
     return modifier.toString().toLowerCase();
   }
@@ -152,23 +177,34 @@ public class TSGenerator implements Generator {
 
   public String generateField(JavaField field) {
     var str = new StringBuilder();
-    str.append(generateMoifiers(field.modifiers)).append(field.name).append("?:")
+    str.append(generateMoifiers(field.modifiers))
+        .append(field.name.replace("constructor", "_constructor")).append("?:")
         .append(generateTypeUse(field.type)).append(";\n");
     return str.toString();
   }
 
   public String generateParamater(JavaParamater paramater) {
     var str = new StringBuilder();
-    str.append(paramater.name).append(":").append(generateTypeUse(paramater.type))
+    str.append("_" + paramater.name).append(":").append(generateTypeUse(paramater.type))
         .append(" | null");
     return str.toString();
   }
 
-  public String generateParamaters(List<JavaParamater> paramaters) {
+  public String generateParamaterV(JavaParamater paramater) {
+    var str = new StringBuilder();
+    str.append("..._" + paramater.name).append(":").append(generateTypeUse(paramater.type));
+    return str.toString();
+  }
+
+  public String generateParamaters(List<JavaParamater> paramaters, boolean va) {
     var str = new StringBuilder();
     str.append("(");
-    for (var p : paramaters) {
-      str.append(generateParamater(p)).append(",");
+    for (int i = 0; i < paramaters.size(); i++) {
+      JavaParamater p = paramaters.get(i);
+      if (!va || i != paramaters.size() - 1)
+        str.append(generateParamater(p)).append(",");
+      else
+        str.append(generateParamaterV(p)).append(",");
     }
     if (!paramaters.isEmpty())
       str.deleteCharAt(str.length() - 1);
@@ -176,22 +212,39 @@ public class TSGenerator implements Generator {
     return str.toString();
   }
 
+
   public String generateMethod(JavaMethod method) {
+    if (method.name.contains("$"))
+      return "";
     var str = new StringBuilder();
     str.append(generateMoifiers(method.modifiers)).append(method.name)
         .append(generateGenerics(method.generics, true))
-        .append(generateParamaters(method.paramaters)).append(":")
+        .append(generateParamaters(method.paramaters, method.varArgs)).append(":")
         .append(generateTypeUse(method.result)).append(";\n");
     return str.toString();
   }
 
   public String generateType(JavaType type) {
+    if (trefs.getOrDefault(type.classpath, null) != null)
+      return "";// skip
     var str = new StringBuilder();
-    str.append("export ").append(type.modifiers.contains(JavaModifier.Abstract) ? "abstract " : "")
-        .append(type.classRef.isEnum() ? "enum "
-            : (type.classRef.isInterface() ? "interface " : "class "))
-        .append(type.name).append(generateGenerics(type.generics, true))
-        .append(type.superType != null ? " extends " + generateTypeUse(type.superType) : "");
+    if (!type.inner)
+      str.append("declare ")
+          .append(type.modifiers.contains(JavaModifier.Abstract) ? "abstract " : "").append(
+              /*
+               * type.classRef.isEnum() ? "enum " : (type.classRef.isInterface() ? "interface " :
+               */"class ");
+    else {
+      str.append(generateMoifiers(type.modifiers)).append(type.name).append("= class ");
+    }
+
+    if (!type.inner)
+      str.append(type.name);
+    str.append(generateGenerics(type.generics, true))
+        .append(type.superType != null && type.superType.type != null
+            && type.superType.type.classpath != "java.lang.Object"
+                ? " extends " + generateTypeUse(type.superType)
+                : "");
     if (type.interfaces != null & !type.interfaces.isEmpty()) {
       str.append(" implements ");
       for (var i : type.interfaces) {
@@ -201,6 +254,9 @@ public class TSGenerator implements Generator {
       str.deleteCharAt(str.length() - 1);
     }
     str.append(" {\n");
+    for (var c : type.classes) {
+      addSpaces(generateType(c), str);
+    }
     for (var field : type.fields) {
       str.append("  ").append(generateField(field));
     }
@@ -214,9 +270,8 @@ public class TSGenerator implements Generator {
   public String generateModule(TSModule module) {
     var str = new StringBuilder();
     if (!module.name.isEmpty())
-      str.append("export namespace ").append(module.name).append(" {\n");
+      str.append("declare namespace ").append(module.name).append(" {\n");
     for (var sub : module.modules.values()) {
-
       if (!module.name.isEmpty())
         addSpaces(generateModule(sub), str);
       else
@@ -238,15 +293,14 @@ public class TSGenerator implements Generator {
 
   public String generateModule(TSModule module, JavaType type) {
     var str = new StringBuilder();
-    String obj =
-        type.classpath.replace("$", ".").substring(0, type.classpath.length() - type.name.length());
-    if (obj.endsWith("."))
-      obj = obj.substring(0, obj.length() - 1);
-    var split = obj.replace("function","_function").split("\\.");
+    String obj = getType(type);
+    var split = obj.split("\\.");
+    if (split.length != 0)
+      split = Arrays.copyOf(split, split.length - 1);
     if (split.length != 0)
       for (var s : split) {
         if (!s.isEmpty())
-          str.append("export namespace ").append(s).append(" {\n");
+          str.append("declare namespace ").append(s).append(" {\n");
       }
     if (!module.name.isEmpty())
       addSpaces(generateType(type), str);
@@ -259,13 +313,41 @@ public class TSGenerator implements Generator {
     return str.toString();
   }
 
+  public void modifierMethod(JavaMethod method) {
+
+  }
+
+  public Map<String, Boolean> usedName = new HashMap<>();
+
+  public void modifierJavaType(JavaType type) {
+    usedName.clear();
+    for (var m : type.methods) {
+      modifierMethod(m);
+      usedName.put(m.name, true);
+    }
+    var tmp = new ArrayList<JavaField>();
+    for (var f : type.fields) {
+      if (usedName.getOrDefault(f.name, false)) {
+        continue;
+      }
+      tmp.add(f);
+    }
+    type.fields = tmp;
+  }
+
   @Override
   public String generate(Map<String, JavaType> map, List<JavaType> values) {
     this.map = map;
     initModules();
     var str = new StringBuilder();
     for (var v : values) {
+      modifierJavaType(v);
       str.append(generateModule(getModule(getModulePath(v)), v));
+    }
+    for (var v : values) {
+      var t = trefs.getOrDefault(v.classpath, null);
+      if (t == null)
+        str.append("declare const ").append(v.name).append(" = ").append(getType(v)).append(";\n");
     }
     return str.toString();
   }

@@ -4,6 +4,7 @@ import com.github.emmmm9o.javatypes.JavaTypes.*;
 
 import arc.util.serialization.*;
 import arc.util.serialization.Json.*;
+import arc.*;
 
 public class TestUtil {
   public static class JavaUseTypeJson {
