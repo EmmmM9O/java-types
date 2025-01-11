@@ -1,17 +1,21 @@
+
 /* (C) 2025 */
 import com.github.emmmm9o.javatypes.*;
+import com.google.common.reflect.*;
 
-
-import arc.*;
 import arc.util.*;
-import java.util.*;
 
 public class TestTSGenerator {
   public static void main(String[] args) {
     var parser = new Parser();
-    parser.filter = clazz -> clazz.getName().contains("java") || clazz.getName().contains("rhino");
+    parser.filter = clazz -> clazz.getName().contains("java") || clazz.getName().contains("rhino")
+        || clazz.getName().contains("jdk") || clazz.getName().contains("sun");
+    parser.fnull = f -> f.isAnnotationPresent(Nullable.class);
+    parser.pnull = f -> f.isAnnotationPresent(Nullable.class);
+    parser.mnull = f -> f.isAnnotationPresent(Nullable.class);
     parser.initEnv();
-    parser.parse(java.lang.Class.class);
+    parser.parse(java.lang.Object.class, true);
+    parser.parse(java.lang.Class.class, true);
     parser.parse(arc.Application.class);
     parser.parse(arc.ApplicationCore.class);
     parser.parse(arc.ApplicationListener.class);
@@ -1344,6 +1348,63 @@ public class TestTSGenerator {
     parser.parse(mindustry.world.blocks.defense.turrets.Turret.class);
     var generator = new TSGenerator();
     generator.prefix = "Packages.";
+    generator.cinfo = c -> TypeToken.of(c.classRef).toString();
+    generator.finfo = f -> TypeToken.of(f.type.typeRef).toString();
+    generator.coinfo = c -> generator.minfo.get(c);
+    generator.minfo = c -> {
+      StringBuilder str=new StringBuilder();
+      if(!c.generics.isEmpty()){
+        str.append("<");
+      }
+      for(var g:c.generics){
+        str.append(TypeToken.of(g.typeRef).toString()).append(",");
+      }
+      if(!c.generics.isEmpty()){
+        str.deleteCharAt(str.length()-1).append(">");
+      }
+      if(c!=null)
+      str.append(c.name);
+      if(!c.paramaters.isEmpty()){
+        str.append("(");
+      }
+      for(var g:c.paramaters){
+        str.append(TypeToken.of(g.type.typeRef).toString())
+          .append(" ").append(g.name)
+          .append(",");
+      }
+      if(!c.paramaters.isEmpty()){
+        str.deleteCharAt(str.length()-1).append(",");
+      }
+      return str.toString();
+    };
+    generator.cmap.put("arc.func.Prov","declare type Prov<T>=()=>T;");
+    generator.cmap.put("arc.func.Cons","declare type Cons<T>=(T)=>void;");
+    generator.cmap.put("arc.func.Cons2","declare type Cons2<P1,P2>=(P1,P2)=>void;");
+    generator.cmap.put("arc.func.Cons3","declare type Cons3<P1,P2,P3>=(P1,P2,P3)=>void;");
+    generator.cmap.put("arc.func.Cons4","declare type Cons4<P1,P2,P3,P4>=(P1,P2,P3,P4)=>void;");
+    generator.cmap.put("arc.func.ConsT","declare type ConsT<T,E>=(T)=>void|never;");
+    generator.cmap.put("arc.func.Boolc","declare type Boolc=(boolean)=>void;");
+    generator.cmap.put("arc.func.Boolp","declare type Boolp=()=>boolean;");
+    generator.cmap.put("arc.func.Boolf","declare type Boolf<T>=(T)=>boolean;");
+    generator.cmap.put("arc.func.Boolf2","declare type Boolf2<A,B>=(A,B)=>boolean;");
+    generator.cmap.put("arc.func.Boolf3","declare type Boolf3<A,B,C>=(A,B,C)=>boolean;");
+    generator.cmap.put("arc.func.Floatc","declare type Floatc=(number)=>void;");
+    generator.cmap.put("arc.func.Floatc2","declare type Floatc2=(number,number)=>void;");
+    generator.cmap.put("arc.func.Floatc4","declare type Floatc=(number,number,number,number)=>void;");
+    generator.cmap.put("arc.func.Floatf","declare type Floatf<T>=(T)=>number;");
+    generator.cmap.put("arc.func.FloatFloatf","declare type FloatFloatf=(number)=>number;");
+    generator.cmap.put("arc.func.Floatp","declare type Floatp=()=>number;");
+    generator.cmap.put("arc.func.Intc","declare type Intc=(number)=>void;");
+    generator.cmap.put("arc.func.Intc2","declare type Intc2=(number,number)=>void;");
+    generator.cmap.put("arc.func.Intc4","declare type Intc=(number,number,number,number)=>void;");
+    generator.cmap.put("arc.func.Intf","declare type Intf<T>=(T)=>number;");
+    generator.cmap.put("arc.func.IntIntf","declare type IntIntf=(number)=>number;");
+    generator.cmap.put("arc.func.Intp","declare type Intp=()=>number;");
+    generator.cmap.put("arc.func.Func","declare type Func<P,R>=(P)=>R;");
+    generator.cmap.put("arc.func.Func2","declare type Func2<P1,P2,R>=(P1,P2)=>R;");
+    generator.cmap.put("arc.func.Func3","declare type Func3<P1,P2,P3,R>=(P1,P2,P3)=>R;");
+    generator.cmap.put("arc.func.Longf","declare type Longf<T>=(T)=>number;");
+
     System.out.println(generator.generate(parser.classMap, parser.values));
   }
 

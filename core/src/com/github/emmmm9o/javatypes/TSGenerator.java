@@ -2,6 +2,7 @@
 package com.github.emmmm9o.javatypes;
 
 import java.util.*;
+import java.lang.reflect.*;
 
 import com.github.emmmm9o.javatypes.JavaTypes.*;
 
@@ -13,6 +14,15 @@ public class TSGenerator implements Generator {
       return obj.substring(0, obj.length() - 1);
     return obj;
   }
+
+  public static interface Info<T> {
+    String get(T t);
+  }
+
+  public Info<JavaMethod> minfo = m -> "";
+  public Info<JavaMethod> coinfo = m -> "";
+  public Info<JavaField> finfo = m -> "";
+  public Info<JavaType> cinfo = m -> "";
 
   public static class TSModule {
     public Map<String, TSModule> modules;
@@ -72,28 +82,49 @@ public class TSGenerator implements Generator {
   }
 
   public Map<String, String> trefs = new HashMap<>();
-  {
-    trefs.put("int", "number");
-    trefs.put("float", "number");
-    trefs.put("double", "number");
-    trefs.put("void", "void");
-    trefs.put("boolean", "boolean");
-    trefs.put("char", "string");
-    trefs.put("byte", "string");
-    trefs.put("java.lang.String", "string");
-    trefs.put("java.lang.Double", "number");
-    trefs.put("java.lang.Float", "number");
-    trefs.put("java.lang.Integer", "number");
-    trefs.put("java.lang.Void", "void");
-    trefs.put("java.lang.Boolean", "boolean");
-    trefs.put("java.lang.Object", "any");
+  public Map<String, Boolean> noG = new HashMap<>();
+  public Map<String, String> cmap = new HashMap<>();
+  public Map<String, String> addonmap = new HashMap<>();
 
+  public void putR(String ref, String r) {
+    putR(ref, r, false);
+  }
+
+  public void putR(String ref, String r, boolean g) {
+    trefs.put(ref, r);
+    noG.put(ref, g);
+  }
+
+  {
+    putR("int", "number", true);
+    putR("float", "number", true);
+    putR("double", "number", true);
+    putR("void", "void", true);
+    putR("boolean", "boolean", true);
+    putR("char", "string", true);
+    putR("byte", "string", true);
+    putR("java.lang.String", "string");
+    putR("java.lang.Double", "number");
+    putR("java.lang.Float", "number");
+    putR("java.lang.Integer", "number");
+    putR("java.lang.Void", "void");
+    putR("java.lang.Boolean", "boolean");
+    putR("java.lang.Object", "any");
+    putR("java.lang.Character", "string");
+    putR("java.lang.Runnable", "()=>void");
+    cmap.put("java.lang.Runnable", "declare type Runnable=()=>void");
   }
 
   public String getType(JavaType type) {
-    var t = trefs.getOrDefault(type.classpath, null);
-    if (t != null)
-      return t;
+    return getType(type, false);
+  }
+
+  public String getType(JavaType type, boolean U) {
+    if (!U) {
+      var t = trefs.getOrDefault(type.classpath, null);
+      if (t != null)
+        return t;
+    }
     return (prefix + type.classpath).replace("$", ".").replace("function", "_function")
         .replace(".type", "._type").replaceAll("\\.\\d+", ".");
   }
@@ -177,22 +208,33 @@ public class TSGenerator implements Generator {
 
   public String generateField(JavaField field) {
     var str = new StringBuilder();
+    str.append("/*").append(finfo.get(field)).append("*/\n");
     str.append(generateMoifiers(field.modifiers))
-        .append(field.name.replace("constructor", "_constructor")).append("?:")
-        .append(generateTypeUse(field.type)).append(";\n");
+        .append(field.name.replace("constructor", "_constructor"))
+        .append(field.nullable ? "?:" : ":").append(generateTypeUse(field.type)).append(";\n");
     return str.toString();
   }
 
   public String generateParamater(JavaParamater paramater) {
     var str = new StringBuilder();
-    str.append("_" + paramater.name).append(":").append(generateTypeUse(paramater.type))
-        .append(" | null");
+    str.append("_" + paramater.name).append(":").append(getPSuf(paramater))
+        .append(generateTypeUse(paramater.type));
+    if (paramater.nullable)
+      str.append(" | null");
     return str.toString();
+  }
+
+  public String getPSuf(JavaParamater paramater) {
+    return (paramater.type.type != null && paramater.type.type.classpath == "java.lang.Class"
+        ? ("Class" + (paramater.type.generics.isEmpty() ? ""
+            : ("<" + generateTypeUse(paramater.type.generics.get(0)) + ">")) + " | ")
+        : "");
   }
 
   public String generateParamaterV(JavaParamater paramater) {
     var str = new StringBuilder();
-    str.append("..._" + paramater.name).append(":").append(generateTypeUse(paramater.type));
+    str.append("..._" + paramater.name).append(":").append(getPSuf(paramater))
+        .append(generateTypeUse(paramater.type));
     return str.toString();
   }
 
@@ -214,20 +256,33 @@ public class TSGenerator implements Generator {
 
 
   public String generateMethod(JavaMethod method) {
-    if (method.name.contains("$"))
+
+    if (method.name != null && method.name.contains("$"))
       return "";
     var str = new StringBuilder();
-    str.append(generateMoifiers(method.modifiers)).append(method.name)
+    str.append("/*");
+    if (method.name == null)
+      str.append(coinfo.get(method));
+    else
+      str.append(minfo.get(method));
+    str.append("*/\n").append(generateMoifiers(method.modifiers))
+        .append(method.name == null ? "constructor" : method.name)
         .append(generateGenerics(method.generics, true))
-        .append(generateParamaters(method.paramaters, method.varArgs)).append(":")
-        .append(generateTypeUse(method.result)).append(";\n");
+        .append(generateParamaters(method.paramaters, method.varArgs));
+    if (method.result != null) {
+      str.append(":").append(generateTypeUse(method.result));
+      if (method.result.type == null || method.result.type.name != "void" && method.nullable)
+        str.append("|null");
+    }
+    str.append(";\n");
     return str.toString();
   }
 
   public String generateType(JavaType type) {
-    if (trefs.getOrDefault(type.classpath, null) != null)
+    if (noG.getOrDefault(type.classpath, false))
       return "";// skip
     var str = new StringBuilder();
+    str.append("/*").append(cinfo.get(type)).append("*/\n");
     if (!type.inner)
       str.append("declare ")
           .append(type.modifiers.contains(JavaModifier.Abstract) ? "abstract " : "").append(
@@ -240,11 +295,12 @@ public class TSGenerator implements Generator {
 
     if (!type.inner)
       str.append(type.name);
-    str.append(generateGenerics(type.generics, true))
-        .append(type.superType != null && type.superType.type != null
-            && type.superType.type.classpath != "java.lang.Object"
-                ? " extends " + generateTypeUse(type.superType)
-                : "");
+    str.append(generateGenerics(type.generics, true)).append(type.superType != null
+        && type.superType.type != null && type.superType.type.classpath != "java.lang.Object"
+            ? " extends " + generateTypeUse(type.superType)
+            : (type.superType != null && type.superType.type != null
+                && type.superType.type.classpath == "java.lang.Object" ? " extends java.lang.Object"
+                    : " "));
     if (type.interfaces != null & !type.interfaces.isEmpty()) {
       str.append(" implements ");
       for (var i : type.interfaces) {
@@ -261,6 +317,9 @@ public class TSGenerator implements Generator {
       str.append("  ").append(generateField(field));
     }
     for (var method : type.methods) {
+      str.append("  ").append(generateMethod(method));
+    }
+    for (var method : type.constructors) {
       str.append("  ").append(generateMethod(method));
     }
     str.append("}\n");
@@ -293,7 +352,7 @@ public class TSGenerator implements Generator {
 
   public String generateModule(TSModule module, JavaType type) {
     var str = new StringBuilder();
-    String obj = getType(type);
+    String obj = getType(type, true);
     var split = obj.split("\\.");
     if (split.length != 0)
       split = Arrays.copyOf(split, split.length - 1);
@@ -302,10 +361,11 @@ public class TSGenerator implements Generator {
         if (!s.isEmpty())
           str.append("declare namespace ").append(s).append(" {\n");
       }
+    var su = cmap.getOrDefault(type.classpath, null);
     if (!module.name.isEmpty())
-      addSpaces(generateType(type), str);
+      addSpaces(su == null ? generateType(type) : su, str);
     else
-      str.append(generateType(type));
+      str.append(su == null ? generateType(type) : su);
     for (var s : split) {
       if (!s.isEmpty())
         str.append("}\n");
@@ -335,11 +395,14 @@ public class TSGenerator implements Generator {
     type.fields = tmp;
   }
 
+  public String coustom = "declare type Class<T> = new (...args: any[]) => T;\n";
+
   @Override
   public String generate(Map<String, JavaType> map, List<JavaType> values) {
     this.map = map;
     initModules();
     var str = new StringBuilder();
+    str.append(coustom);
     for (var v : values) {
       modifierJavaType(v);
       str.append(generateModule(getModule(getModulePath(v)), v));
@@ -347,7 +410,8 @@ public class TSGenerator implements Generator {
     for (var v : values) {
       var t = trefs.getOrDefault(v.classpath, null);
       if (t == null)
-        str.append("declare const ").append(v.name).append(" = ").append(getType(v)).append(";\n");
+        str.append("declare const ").append(v.name).append(" = ").append(getType(v,true)).append(";\n");
+      str.append("declare type ").append(v.name).append(" = ").append(getType(v,true)).append(";\n");
     }
     return str.toString();
   }

@@ -20,6 +20,7 @@ public class JavaTypes {
     public Set<JavaTypeUse> interfaces;
     public List<JavaField> fields;
     public List<JavaMethod> methods;
+    public List<JavaMethod> constructors;
     public List<JavaType> classes;
     public boolean inner;
 
@@ -37,6 +38,7 @@ public class JavaTypes {
       fields = new ArrayList<>();
       methods = new ArrayList<>();
       classes = new ArrayList<>();
+      constructors = new ArrayList<>();
       superType = null;
       inner = clazz.getDeclaringClass() != null;
 
@@ -55,6 +57,7 @@ public class JavaTypes {
 
   public static class JavaParamater {
     public JavaTypeUse type;
+    public boolean nullable;
     public String name;
   }
 
@@ -65,11 +68,15 @@ public class JavaTypes {
     public Set<JavaModifier> modifiers;
     public List<JavaTypeUse> generics;
     public boolean varArgs;
+    public boolean nullable;
+    public Method mref;
+    public Constructor<?> cref;
   }
 
   public static class JavaField {
     public JavaTypeUse type;
     public String name;
     public Set<JavaModifier> modifiers;
+    public boolean nullable;
   }
 }

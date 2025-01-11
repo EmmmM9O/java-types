@@ -11,7 +11,19 @@ public class Parser {
   public static interface Filter {
     public boolean filter(Class<?> clazz);
   }
+  public static interface FieldNullable {
+    public boolean check(Field field);
+  }
+  public static interface ParameterNullable {
+    public boolean check(Parameter paramater);
+  }
+  public static interface MethodNullable {
+    public boolean check(Method paramater);
+  }
 
+  public FieldNullable fnull = f -> true;
+  public ParameterNullable pnull = p -> true;
+  public MethodNullable mnull = m -> true;
   public Filter filter = clazz -> false;
   public Map<String, JavaType> classMap = new HashMap<>();
   public Map<String, Boolean> supMap = new HashMap<>();
@@ -21,7 +33,8 @@ public class Parser {
   public void put(Class<?> clazz) {
     var tmp = new JavaType(clazz);
     classMap.put(clazz.getName(), tmp);
-    values.add(tmp);
+    supMap.put(clazz.getName(), true);
+    // values.add(tmp);
   }
 
   public void initEnv() {
@@ -196,6 +209,31 @@ public class Parser {
           type = getType(field.getGenericType());
           name = field.getName();
           modifiers = getModifiers(field.getModifiers());
+          nullable = fnull.check(field);
+        }
+      });
+    }
+    for (var method : clazz.getConstructors()) {
+      tmp.constructors.add(new JavaMethod() {
+        {
+          varArgs = method.isVarArgs();
+          modifiers = getModifiers(method.getModifiers());
+          result = null;
+          name = null;
+          paramaters = new ArrayList<>();
+          generics = getTypes(method.getTypeParameters());
+          cref=method;
+          var pt = method.getParameters();
+          nullable = false;
+          for (var p : pt) {
+            paramaters.add(new JavaParamater() {
+              {
+                name = p.getName();
+                type = getType(p.getParameterizedType());
+                nullable = pnull.check(p);
+              }
+            });
+          }
         }
       });
     }
@@ -208,15 +246,16 @@ public class Parser {
           name = method.getName();
           paramaters = new ArrayList<>();
           generics = getTypes(method.getTypeParameters());
+          nullable = mnull.check(method);
           var pts = method.getGenericParameterTypes();
           var pt = method.getParameters();
-          for (int i = 0; i < pt.length; i++) {
-            var paramater = pt[i];
-            final int di = i;
+          mref=method;
+          for (var p : pt) {
             paramaters.add(new JavaParamater() {
               {
-                name = paramater.getName();
-                type = getType(pts[di]);
+                name = p.getName();
+                type = getType(p.getParameterizedType());
+                nullable = pnull.check(p);
               }
             });
           }
