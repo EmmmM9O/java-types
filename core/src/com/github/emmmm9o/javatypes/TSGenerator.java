@@ -3,416 +3,552 @@ package com.github.emmmm9o.javatypes;
 
 import java.util.*;
 import java.lang.reflect.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 import com.github.emmmm9o.javatypes.JavaTypes.*;
+import com.github.emmmm9o.javatypes.exceptions.TypeGenerationException;
 
+/**
+ * Generator for converting Java types to TypeScript declaration files.
+ * This class handles the conversion of Java types into TypeScript type definitions,
+ * including proper handling of generics, interfaces, and class hierarchies.
+ */
 public class TSGenerator implements Generator {
-  public String getModulePath(JavaType type) {
-    String obj =
-        type.classpath.replace("$", ".").substring(0, type.classpath.length() - type.name.length());
-    if (obj.endsWith("."))
-      return obj.substring(0, obj.length() - 1);
-    return obj;
-  }
+    private final Map<String, String> typeReferenceMap;
+    private final Map<String, Boolean> noGenericsMap;
+    private final Map<String, String> customTypeMap;
+    private final Map<String, String> additionalTypeMap;
+    private final Map<String, TSModule> moduleReferenceMap;
+    private final TSModule rootModule;
+    private String modulePrefix = "";
 
-  public static interface Info<T> {
-    String get(T t);
-  }
-
-  public Info<JavaMethod> minfo = m -> "";
-  public Info<JavaMethod> coinfo = m -> "";
-  public Info<JavaField> finfo = m -> "";
-  public Info<JavaType> cinfo = m -> "";
-
-  public static class TSModule {
-    public Map<String, TSModule> modules;
-    public Map<String, String> types;
-    public String name;
-
-    public TSModule() {
-      name = "";
-      modules = new HashMap<>();
-      types = new HashMap<>();
+    /**
+     * Interface for providing additional type information.
+     */
+    @FunctionalInterface
+    public interface TypeInfoProvider<T> {
+        String getInfo(T item);
     }
 
-    public TSModule(String name) {
-      this.name = name;
-      modules = new HashMap<>();
-      types = new HashMap<>();
-    }
-  }
+    private final TypeInfoProvider<JavaMethod> methodInfoProvider;
+    private final TypeInfoProvider<JavaMethod> constructorInfoProvider;
+    private final TypeInfoProvider<JavaField> fieldInfoProvider;
+    private final TypeInfoProvider<JavaType> classInfoProvider;
 
-  public String prefix = "";
-  public Map<String, TSModule> refs = new HashMap<>();
-  public TSModule root = new TSModule();
-
-  public TSModule getModule(String module) {
-    var t = refs.getOrDefault(module, null);
-    if (t != null)
-      return t;
-    var now = root;
-    for (var value : module.replace("function", "_function").split("\\.")) {
-      var tmp = now.modules.getOrDefault(value, null);
-      if (tmp != null) {
-        now = tmp;
-        continue;
-      }
-      tmp = new TSModule(value);
-      now.modules.put(value, tmp);
-      now = tmp;
-    }
-    refs.put(module, now);
-    return now;
-  }
-
-  public void initModules() {
-    refs.put("", root);
-    for (var value : map.values()) {
-      getModule(getModulePath(value)).types.put(value.name, value.classpath);
-    }
-  }
-
-  public Map<String, JavaType> map;
-
-  public static void addSpaces(String input, StringBuilder sb) {
-    String[] lines = input.split("\n");
-    for (String line : lines) {
-      sb.append("  ").append(line).append("\n");
-    }
-  }
-
-  public Map<String, String> trefs = new HashMap<>();
-  public Map<String, Boolean> noG = new HashMap<>();
-  public Map<String, String> cmap = new HashMap<>();
-  public Map<String, String> addonmap = new HashMap<>();
-
-  public void putR(String ref, String r) {
-    putR(ref, r, false);
-  }
-
-  public void putR(String ref, String r, boolean g) {
-    trefs.put(ref, r);
-    noG.put(ref, g);
-  }
-
-  {
-    putR("int", "number", true);
-    putR("float", "number", true);
-    putR("double", "number", true);
-    putR("void", "void", true);
-    putR("boolean", "boolean", true);
-    putR("char", "string", true);
-    putR("byte", "string", true);
-    putR("java.lang.String", "string");
-    putR("java.lang.Double", "number");
-    putR("java.lang.Float", "number");
-    putR("java.lang.Integer", "number");
-    putR("java.lang.Void", "void");
-    putR("java.lang.Boolean", "boolean");
-    putR("java.lang.Object", "any");
-    putR("java.lang.Character", "string");
-    putR("java.lang.Runnable", "()=>void");
-    cmap.put("java.lang.Runnable", "declare type Runnable=()=>void");
-  }
-
-  public String getType(JavaType type) {
-    return getType(type, false);
-  }
-
-  public String getType(JavaType type, boolean U) {
-    if (!U) {
-      var t = trefs.getOrDefault(type.classpath, null);
-      if (t != null)
-        return t;
-    }
-    return (prefix + type.classpath).replace("$", ".").replace("function", "_function")
-        .replace(".type", "._type").replaceAll("\\.\\d+", ".");
-  }
-
-  public String generateGenerics(List<JavaTypeUse> generics) {
-    return generateGenerics(generics, false);
-  }
-
-  public String generateGenerics(List<JavaTypeUse> generics, boolean up) {
-    var str = new StringBuilder();
-    if (generics != null && !generics.isEmpty()) {
-      str.append("<");
-      for (var t : generics) {
-        str.append(generateTypeUse(t, up)).append(",");
-      }
-      str.deleteCharAt(str.length() - 1);
-      str.append(">");
-    }
-    return str.toString();
-  }
-
-  public String generateTypeUse(JavaTypeUse type) {
-    return generateTypeUse(type, false);
-  }
-
-  public String generateTypeUse(JavaTypeUse type, boolean up) {
-    var str = new StringBuilder();
-    if (type.typeG == "?")
-      str.append("any");
-    else if (type.typeG != null)
-      str.append(type.typeG);
-    if (type.typeC != null)
-      str.append(generateTypeUse(type.typeC, false)).append("[]");
-    if (type.type != null)
-      str.append(getType(type.type));
-    if (type.type != null && type.generics.isEmpty() && !type.type.generics.isEmpty()) {
-      str.append("<");
-      for (var t : type.type.generics) {
-        str.append("any,");
-        str.deleteCharAt(str.length() - 1);
-      }
-      str.append(">");
-    }
-    str.append(generateGenerics(type.generics));
-    if (type.upper != null && !type.upper.isEmpty()) {
-      var tm = new ArrayList<JavaTypeUse>();
-      for (var t : type.upper) {
-        if (t.type != null && t.type.classpath == "java.lang.Object")
-          continue;
-        tm.add(t);
-      }
-      type.upper = tm;
-    }
-    if (type.upper != null && !type.upper.isEmpty()
-        && (up || (type.typeG == null || type.typeG == null))) {
-      str.append(" extends ");
-      for (var t : type.upper) {
-        str.append(generateTypeUse(t, false)).append("&");
-      }
-      str.deleteCharAt(str.length() - 1);
-    }
-    return str.toString();
-  }
-
-  public String generateMoifier(JavaModifier modifier) {
-    if (modifier == JavaModifier.Final)
-      return "";
-    if (modifier == JavaModifier.Abstract)
-      return "";
-    return modifier.toString().toLowerCase();
-  }
-
-  public String generateMoifiers(Set<JavaModifier> modifier) {
-    var str = new StringBuilder();
-    if (modifier != null)
-      for (var m : modifier) {
-        str.append(generateMoifier(m)).append(" ");
-      }
-    return str.toString();
-  }
-
-  public String generateField(JavaField field) {
-    var str = new StringBuilder();
-    str.append("/*").append(finfo.get(field)).append("*/\n");
-    str.append(generateMoifiers(field.modifiers))
-        .append(field.name.replace("constructor", "_constructor"))
-        .append(field.nullable ? "?:" : ":").append(generateTypeUse(field.type)).append(";\n");
-    return str.toString();
-  }
-
-  public String generateParamater(JavaParamater paramater) {
-    var str = new StringBuilder();
-    str.append("_" + paramater.name).append(":").append(getPSuf(paramater))
-        .append(generateTypeUse(paramater.type));
-    if (paramater.nullable)
-      str.append(" | null");
-    return str.toString();
-  }
-
-  public String getPSuf(JavaParamater paramater) {
-    return (paramater.type.type != null && paramater.type.type.classpath == "java.lang.Class"
-        ? ("Class" + (paramater.type.generics.isEmpty() ? ""
-            : ("<" + generateTypeUse(paramater.type.generics.get(0)) + ">")) + " | ")
-        : "");
-  }
-
-  public String generateParamaterV(JavaParamater paramater) {
-    var str = new StringBuilder();
-    str.append("..._" + paramater.name).append(":").append(getPSuf(paramater))
-        .append(generateTypeUse(paramater.type));
-    return str.toString();
-  }
-
-  public String generateParamaters(List<JavaParamater> paramaters, boolean va) {
-    var str = new StringBuilder();
-    str.append("(");
-    for (int i = 0; i < paramaters.size(); i++) {
-      JavaParamater p = paramaters.get(i);
-      if (!va || i != paramaters.size() - 1)
-        str.append(generateParamater(p)).append(",");
-      else
-        str.append(generateParamaterV(p)).append(",");
-    }
-    if (!paramaters.isEmpty())
-      str.deleteCharAt(str.length() - 1);
-    str.append(")");
-    return str.toString();
-  }
-
-
-  public String generateMethod(JavaMethod method) {
-
-    if (method.name != null && method.name.contains("$"))
-      return "";
-    var str = new StringBuilder();
-    str.append("/*");
-    if (method.name == null)
-      str.append(coinfo.get(method));
-    else
-      str.append(minfo.get(method));
-    str.append("*/\n").append(generateMoifiers(method.modifiers))
-        .append(method.name == null ? "constructor" : method.name)
-        .append(generateGenerics(method.generics, true))
-        .append(generateParamaters(method.paramaters, method.varArgs));
-    if (method.result != null) {
-      str.append(":").append(generateTypeUse(method.result));
-      if (method.result.type == null || method.result.type.name != "void" && method.nullable)
-        str.append("|null");
-    }
-    str.append(";\n");
-    return str.toString();
-  }
-
-  public String generateType(JavaType type) {
-    if (noG.getOrDefault(type.classpath, false))
-      return "";// skip
-    var str = new StringBuilder();
-    str.append("/*").append(cinfo.get(type)).append("*/\n");
-    if (!type.inner)
-      str.append("declare ")
-          .append(type.modifiers.contains(JavaModifier.Abstract) ? "abstract " : "").append(
-              /*
-               * type.classRef.isEnum() ? "enum " : (type.classRef.isInterface() ? "interface " :
-               */"class ");
-    else {
-      str.append(generateMoifiers(type.modifiers)).append(type.name).append("= class ");
+    /**
+     * Creates a new TypeScript generator with default settings.
+     */
+    public TSGenerator() {
+        this(m -> "", m -> "", f -> "", c -> "");
     }
 
-    if (!type.inner)
-      str.append(type.name);
-    str.append(generateGenerics(type.generics, true)).append(type.superType != null
-        && type.superType.type != null && type.superType.type.classpath != "java.lang.Object"
-            ? " extends " + generateTypeUse(type.superType)
-            : (type.superType != null && type.superType.type != null
-                && type.superType.type.classpath == "java.lang.Object" ? " extends java.lang.Object"
-                    : " "));
-    if (type.interfaces != null & !type.interfaces.isEmpty()) {
-      str.append(" implements ");
-      for (var i : type.interfaces) {
-        str.append(generateTypeUse(i)).append(",");
-      }
-
-      str.deleteCharAt(str.length() - 1);
-    }
-    str.append(" {\n");
-    for (var c : type.classes) {
-      addSpaces(generateType(c), str);
-    }
-    for (var field : type.fields) {
-      str.append("  ").append(generateField(field));
-    }
-    for (var method : type.methods) {
-      str.append("  ").append(generateMethod(method));
-    }
-    for (var method : type.constructors) {
-      str.append("  ").append(generateMethod(method));
-    }
-    str.append("}\n");
-    return str.toString();
-  }
-
-  public String generateModule(TSModule module) {
-    var str = new StringBuilder();
-    if (!module.name.isEmpty())
-      str.append("declare namespace ").append(module.name).append(" {\n");
-    for (var sub : module.modules.values()) {
-      if (!module.name.isEmpty())
-        addSpaces(generateModule(sub), str);
-      else
-        str.append(generateModule(sub));
-      str.append("\n");
-    }
-    for (var type : module.types.values()) {
-      if (!module.name.isEmpty())
-        addSpaces(generateType(map.get(type)), str);
-      else
-        str.append(generateType(map.get(type)));
-      str.append("\n");
+    /**
+     * Creates a new TypeScript generator with custom info providers.
+     */
+    public TSGenerator(
+            TypeInfoProvider<JavaMethod> methodInfo,
+            TypeInfoProvider<JavaMethod> constructorInfo,
+            TypeInfoProvider<JavaField> fieldInfo,
+            TypeInfoProvider<JavaType> classInfo) {
+        this.methodInfoProvider = methodInfo;
+        this.constructorInfoProvider = constructorInfo;
+        this.fieldInfoProvider = fieldInfo;
+        this.classInfoProvider = classInfo;
+        this.typeReferenceMap = new ConcurrentHashMap<>();
+        this.noGenericsMap = new ConcurrentHashMap<>();
+        this.customTypeMap = new ConcurrentHashMap<>();
+        this.additionalTypeMap = new ConcurrentHashMap<>();
+        this.moduleReferenceMap = new ConcurrentHashMap<>();
+        this.rootModule = new TSModule();
+        initializeDefaultTypeMappings();
     }
 
-    if (!module.name.isEmpty())
-      str.append("}\n");
-    return str.toString();
-  }
+    /**
+     * Represents a TypeScript module.
+     */
+    public static class TSModule {
+        private final Map<String, TSModule> modules;
+        private final Map<String, String> types;
+        private final String name;
 
-  public String generateModule(TSModule module, JavaType type) {
-    var str = new StringBuilder();
-    String obj = getType(type, true);
-    var split = obj.split("\\.");
-    if (split.length != 0)
-      split = Arrays.copyOf(split, split.length - 1);
-    if (split.length != 0)
-      for (var s : split) {
-        if (!s.isEmpty())
-          str.append("declare namespace ").append(s).append(" {\n");
-      }
-    var su = cmap.getOrDefault(type.classpath, null);
-    if (!module.name.isEmpty())
-      addSpaces(su == null ? generateType(type) : su, str);
-    else
-      str.append(su == null ? generateType(type) : su);
-    for (var s : split) {
-      if (!s.isEmpty())
-        str.append("}\n");
+        public TSModule() {
+            this("", new HashMap<>(), new HashMap<>());
+        }
+
+        public TSModule(String name) {
+            this(name, new HashMap<>(), new HashMap<>());
+        }
+
+        private TSModule(String name, Map<String, TSModule> modules, Map<String, String> types) {
+            this.name = name;
+            this.modules = modules;
+            this.types = types;
+        }
+
+        public Map<String, TSModule> getModules() {
+            return Collections.unmodifiableMap(modules);
+        }
+
+        public Map<String, String> getTypes() {
+            return Collections.unmodifiableMap(types);
+        }
+
+        public String getName() {
+            return name;
+        }
     }
-    return str.toString();
-  }
 
-  public void modifierMethod(JavaMethod method) {
+    private void initializeDefaultTypeMappings() {
+        // Primitive type mappings
+        addTypeMapping("int", "number", true);
+        addTypeMapping("float", "number", true);
+        addTypeMapping("double", "number", true);
+        addTypeMapping("void", "void", true);
+        addTypeMapping("boolean", "boolean", true);
+        addTypeMapping("char", "string", true);
+        addTypeMapping("byte", "string", true);
 
-  }
+        // Common Java class mappings
+        addTypeMapping("java.lang.String", "string");
+        addTypeMapping("java.lang.Double", "number");
+        addTypeMapping("java.lang.Float", "number");
+        addTypeMapping("java.lang.Integer", "number");
+        addTypeMapping("java.lang.Void", "void");
+        addTypeMapping("java.lang.Boolean", "boolean");
+        addTypeMapping("java.lang.Object", "any");
+        addTypeMapping("java.lang.Character", "string");
+        addTypeMapping("java.lang.Runnable", "()=>void");
 
-  public Map<String, Boolean> usedName = new HashMap<>();
-
-  public void modifierJavaType(JavaType type) {
-    usedName.clear();
-    for (var m : type.methods) {
-      modifierMethod(m);
-      usedName.put(m.name, true);
+        // Add custom type declarations
+        addCustomTypeDeclaration("java.lang.Runnable", "declare type Runnable=()=>void");
     }
-    var tmp = new ArrayList<JavaField>();
-    for (var f : type.fields) {
-      if (usedName.getOrDefault(f.name, false)) {
-        continue;
-      }
-      tmp.add(f);
-    }
-    type.fields = tmp;
-  }
 
-  public String coustom = "declare type Class<T> = new (...args: any[]) => T;\n";
+    /**
+     * Adds a type mapping from Java to TypeScript.
+     */
+    public void addTypeMapping(String javaType, String tsType) {
+        addTypeMapping(javaType, tsType, false);
+    }
 
-  @Override
-  public String generate(Map<String, JavaType> map, List<JavaType> values) {
-    this.map = map;
-    initModules();
-    var str = new StringBuilder();
-    str.append(coustom);
-    for (var v : values) {
-      modifierJavaType(v);
-      str.append(generateModule(getModule(getModulePath(v)), v));
+    /**
+     * Adds a type mapping from Java to TypeScript with control over generics handling.
+     */
+    public void addTypeMapping(String javaType, String tsType, boolean noGenerics) {
+        typeReferenceMap.put(javaType, tsType);
+        if (noGenerics) {
+            noGenericsMap.put(javaType, true);
+        }
     }
-    for (var v : values) {
-      var t = trefs.getOrDefault(v.classpath, null);
-      if (t == null)
-        str.append("declare const ").append(v.name).append(" = ").append(getType(v,true)).append(";\n");
-      str.append("declare type ").append(v.name).append(" = ").append(getType(v,true)).append(";\n");
+
+    /**
+     * Adds a custom type declaration.
+     */
+    public void addCustomTypeDeclaration(String type, String declaration) {
+        customTypeMap.put(type, declaration);
     }
-    return str.toString();
-  }
+
+    /**
+     * Gets the module path for a type.
+     */
+    public String getModulePath(JavaType type) {
+        String path = type.getClasspath().replace("$", ".");
+        int lastDot = path.lastIndexOf(".");
+        return lastDot > 0 ? path.substring(0, lastDot) : "";
+    }
+
+    /**
+     * Gets or creates a module for the given path.
+     */
+    public TSModule getModule(String modulePath) {
+        return moduleReferenceMap.computeIfAbsent(modulePath, path -> {
+            TSModule current = rootModule;
+            if (!path.isEmpty()) {
+                for (String part : path.replace("function", "_function").split("\\.")) {
+                    current = current.modules.computeIfAbsent(part, TSModule::new);
+                }
+            }
+            return current;
+        });
+    }
+
+    /**
+     * Initializes modules for all types.
+     */
+    public void initializeModules(Map<String, JavaType> typeMap) {
+        moduleReferenceMap.put("", rootModule);
+        typeMap.values().forEach(type -> {
+            String modulePath = getModulePath(type);
+            getModule(modulePath).types.put(type.getName(), type.getClasspath());
+        });
+    }
+
+    /**
+     * Generates TypeScript type for a Java type.
+     */
+    public String generateType(JavaType type) {
+        return generateType(type, false);
+    }
+
+    public String generateType(JavaType type, boolean useUpperBound) {
+        if (!useUpperBound) {
+            String tsType = typeReferenceMap.get(type.getClasspath());
+            if (tsType != null) {
+                return tsType;
+            }
+        }
+        return (modulePrefix + type.getClasspath())
+            .replace("$", ".")
+            .replace("function", "_function")
+            .replace(".type", "._type")
+            .replaceAll("\\.\\d+", ".");
+    }
+
+    /**
+     * Generates TypeScript generics declaration.
+     */
+    public String generateGenerics(List<JavaTypeUse> generics) {
+        return generateGenerics(generics, false);
+    }
+
+    public String generateGenerics(List<JavaTypeUse> generics, boolean useUpperBound) {
+        if (generics == null || generics.isEmpty()) {
+            return "";
+        }
+
+        return "<" + generics.stream()
+            .map(type -> generateTypeUse(type, useUpperBound))
+            .collect(Collectors.joining(",")) + ">";
+    }
+
+    /**
+     * Generates TypeScript type for a Java type use.
+     */
+    public String generateTypeUse(JavaTypeUse typeUse) {
+        return generateTypeUse(typeUse, false);
+    }
+
+    public String generateTypeUse(JavaTypeUse typeUse, boolean useUpperBound) {
+        StringBuilder builder = new StringBuilder();
+
+        if ("?".equals(typeUse.getTypeGeneric())) {
+            builder.append("any");
+        } else if (typeUse.getTypeGeneric() != null) {
+            builder.append(typeUse.getTypeGeneric());
+        }
+
+        if (typeUse.getComponentType() != null) {
+            builder.append(generateTypeUse(typeUse.getComponentType(), false))
+                .append("[]");
+        }
+
+        if (typeUse.getType() != null) {
+            builder.append(generateType(typeUse.getType()));
+            
+            // Handle generic parameters
+            if (typeUse.getGenerics().isEmpty() && !typeUse.getType().getGenerics().isEmpty()) {
+                builder.append("<")
+                    .append(String.join(",", Collections.nCopies(typeUse.getType().getGenerics().size(), "any")))
+                    .append(">");
+            } else {
+                builder.append(generateGenerics(typeUse.getGenerics()));
+            }
+        }
+
+        // Handle bounds
+        if (typeUse.getUpperBounds() != null && !typeUse.getUpperBounds().isEmpty() &&
+            (useUpperBound || typeUse.getTypeGeneric() == null)) {
+            List<JavaTypeUse> bounds = typeUse.getUpperBounds().stream()
+                .filter(bound -> bound.getType() == null || 
+                    !bound.getType().getClasspath().equals("java.lang.Object"))
+                .collect(Collectors.toList());
+
+            if (!bounds.isEmpty()) {
+                builder.append(" extends ")
+                    .append(bounds.stream()
+                        .map(bound -> generateTypeUse(bound, false))
+                        .collect(Collectors.joining("&")));
+            }
+        }
+
+        return builder.toString();
+    }
+
+    /**
+     * Generates TypeScript modifier.
+     */
+    public String generateModifier(JavaModifier modifier) {
+        if (modifier == JavaModifier.Final || modifier == JavaModifier.Abstract) {
+            return "";
+        }
+        return modifier.toString().toLowerCase();
+    }
+
+    /**
+     * Generates TypeScript modifiers.
+     */
+    public String generateModifiers(Set<JavaModifier> modifiers) {
+        if (modifiers == null || modifiers.isEmpty()) {
+            return "";
+        }
+        return modifiers.stream()
+            .map(this::generateModifier)
+            .filter(mod -> !mod.isEmpty())
+            .collect(Collectors.joining(" ")) + " ";
+    }
+
+    /**
+     * Generates TypeScript field declaration.
+     */
+    public String generateField(JavaField field) {
+        StringBuilder builder = new StringBuilder();
+        String info = fieldInfoProvider.getInfo(field);
+        if (!info.isEmpty()) {
+            builder.append("/*").append(info).append("*/\n");
+        }
+
+        builder.append(generateModifiers(field.getModifiers()))
+            .append(field.getName().replace("constructor", "_constructor"))
+            .append(field.isNullable() ? "?:" : ":")
+            .append(generateTypeUse(field.getType()))
+            .append(";");
+
+        return builder.toString();
+    }
+
+    /**
+     * Generates TypeScript parameter declaration.
+     */
+    public String generateParameter(JavaParameter parameter, boolean isVarArgs) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("_").append(parameter.getName())
+            .append(":")
+            .append(generateParameterType(parameter));
+
+        if (parameter.isNullable()) {
+            builder.append(" | null");
+        }
+
+        if (isVarArgs) {
+            builder.append("[]");
+        }
+
+        return builder.toString();
+    }
+
+    private String generateParameterType(JavaParameter parameter) {
+        if (parameter.getType().getType() != null && 
+            parameter.getType().getType().getClasspath().equals("java.lang.Class")) {
+            StringBuilder builder = new StringBuilder("Class");
+            if (!parameter.getType().getGenerics().isEmpty()) {
+                builder.append("<")
+                    .append(generateTypeUse(parameter.getType().getGenerics().get(0)))
+                    .append(">");
+            }
+            builder.append(" | ");
+            return builder.toString();
+        }
+        return generateTypeUse(parameter.getType());
+    }
+
+    /**
+     * Generates TypeScript method declaration.
+     */
+    public String generateMethod(JavaMethod method) {
+        StringBuilder builder = new StringBuilder();
+        String info = method.getConstructorRef() != null ? 
+            constructorInfoProvider.getInfo(method) : 
+            methodInfoProvider.getInfo(method);
+
+        if (!info.isEmpty()) {
+            builder.append("/*").append(info).append("*/\n");
+        }
+
+        builder.append(generateModifiers(method.getModifiers()));
+
+        if (method.getName() != null) {
+            builder.append(method.getName());
+        }
+
+        builder.append(generateGenerics(method.getGenerics(), true))
+            .append("(");
+
+        // Generate parameters
+        List<JavaParameter> parameters = method.getParameters();
+        for (int i = 0; i < parameters.size(); i++) {
+            if (i > 0) {
+                builder.append(", ");
+            }
+            builder.append(generateParameter(parameters.get(i), 
+                method.isVarArgs() && i == parameters.size() - 1));
+        }
+
+        builder.append(")");
+
+        // Add return type for methods
+        if (method.getResult() != null) {
+            builder.append(":")
+                .append(generateTypeUse(method.getResult()))
+                .append(method.isNullable() ? " | null" : "");
+        }
+
+        builder.append(";");
+        return builder.toString();
+    }
+
+    /**
+     * Generates complete TypeScript declaration file content.
+     */
+    public String generateDeclarationFile(JavaType type) {
+        if (type == null) {
+            throw new TypeGenerationException("Cannot generate declaration file for null type");
+        }
+
+        try {
+            StringBuilder builder = new StringBuilder();
+            String info = classInfoProvider.getInfo(type);
+            
+            if (!info.isEmpty()) {
+                builder.append("/*").append(info).append("*/\n");
+            }
+
+            // Check if this type should be skipped
+            if (noGenericsMap.getOrDefault(type.getClasspath(), false)) {
+                return "";
+            }
+
+            // Add any custom type declarations first
+            String customDeclaration = customTypeMap.get(type.getClasspath());
+            if (customDeclaration != null) {
+                builder.append(customDeclaration).append("\n\n");
+            }
+
+            // Generate class/interface declaration
+            builder.append(generateModifiers(type.getModifiers()))
+                .append("declare ")
+                .append(type.getModifiers().contains(JavaModifier.Abstract) ? "abstract " : "")
+                .append(type.getClassRef().isInterface() ? "interface " : "class ")
+                .append(type.getName())
+                .append(generateGenerics(type.getGenerics(), true));
+
+            // Handle inheritance
+            if (type.getSuperType() != null && 
+                !type.getSuperType().getType().getClasspath().equals("java.lang.Object")) {
+                builder.append(" extends ")
+                    .append(generateTypeUse(type.getSuperType()));
+            }
+
+            // Handle interfaces
+            Set<JavaTypeUse> interfaces = type.getInterfaces();
+            if (interfaces != null && !interfaces.isEmpty()) {
+                builder.append(type.getClassRef().isInterface() ? " extends " : " implements ")
+                    .append(interfaces.stream()
+                        .map(this::generateTypeUse)
+                        .collect(Collectors.joining(", ")));
+            }
+
+            builder.append(" {\n");
+
+            // Generate members
+            type.getFields().forEach(field -> 
+                addSpaces(generateField(field), builder));
+            
+            if (!type.getClassRef().isInterface()) {
+                type.getConstructors().forEach(constructor -> 
+                    addSpaces(generateMethod(constructor), builder));
+            }
+            
+            type.getMethods().forEach(method -> 
+                addSpaces(generateMethod(method), builder));
+
+            builder.append("}\n");
+
+            // Generate inner types
+            type.getInnerClasses().forEach(innerType -> 
+                builder.append("\n").append(generateDeclarationFile(innerType)));
+
+            // Add any additional type declarations
+            String additionalDeclaration = additionalTypeMap.get(type.getClasspath());
+            if (additionalDeclaration != null) {
+                builder.append("\n").append(additionalDeclaration);
+            }
+
+            return builder.toString();
+        } catch (Exception e) {
+            throw new TypeGenerationException("Failed to generate declaration file for type: " + type.getClasspath(), e);
+        }
+    }
+
+    private void addSpaces(String input, StringBuilder builder) {
+        Arrays.stream(input.split("\n"))
+            .forEach(line -> builder.append("  ").append(line).append("\n"));
+    }
+
+    public void setModulePrefix(String prefix) {
+        this.modulePrefix = prefix;
+    }
+
+    public TSModule getRootModule() {
+        return rootModule;
+    }
+
+    /**
+     * Adds a type-specific additional declaration that will be appended after the main type declaration.
+     */
+    public void addAdditionalTypeDeclaration(String type, String declaration) {
+        if (type != null && declaration != null) {
+            additionalTypeMap.put(type, declaration);
+        }
+    }
+
+    /**
+     * Generates a complete module declaration including all its types.
+     */
+    public String generateModuleDeclaration(TSModule module, Map<String, JavaType> typeMap) {
+        if (module == null || typeMap == null) {
+            throw new TypeGenerationException("Module and type map cannot be null");
+        }
+
+        StringBuilder builder = new StringBuilder();
+
+        // Generate namespace declaration if needed
+        if (!module.getName().isEmpty()) {
+            builder.append("declare namespace ").append(module.getName()).append(" {\n");
+        }
+
+        // Generate sub-modules
+        module.getModules().values().forEach(subModule -> {
+            String subModuleDeclaration = generateModuleDeclaration(subModule, typeMap);
+            if (!subModuleDeclaration.isEmpty()) {
+                if (!module.getName().isEmpty()) {
+                    addSpaces(subModuleDeclaration, builder);
+                } else {
+                    builder.append(subModuleDeclaration);
+                }
+                builder.append("\n");
+            }
+        });
+
+        // Generate types
+        module.getTypes().values().forEach(typePath -> {
+            JavaType type = typeMap.get(typePath);
+            if (type != null) {
+                String typeDeclaration = generateDeclarationFile(type);
+                if (!typeDeclaration.isEmpty()) {
+                    if (!module.getName().isEmpty()) {
+                        addSpaces(typeDeclaration, builder);
+                    } else {
+                        builder.append(typeDeclaration);
+                    }
+                    builder.append("\n");
+                }
+            }
+        });
+
+        if (!module.getName().isEmpty()) {
+            builder.append("}\n");
+        }
+
+        return builder.toString();
+    }
 }
